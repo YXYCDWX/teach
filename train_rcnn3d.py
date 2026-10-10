@@ -235,6 +235,8 @@ def main():
                         if pos_m.any() else fg_logit.new_zeros(()))
             loss = cls_loss + reg_loss
             scaler.scale(loss).backward()
+            scaler.unscale_(opt)                       # AMP: 先还原梯度再裁剪,
+            torch.nn.utils.clip_grad_norm_(refine.parameters(), 10.0)  # 防 NaN 爆炸
             scaler.step(opt)
             scaler.update()
             tot["cls"] += cls_loss.item(); tot["reg"] += reg_loss.item(); n += 1

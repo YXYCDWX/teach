@@ -116,6 +116,7 @@ def main():
     # 断点续训
     last_path = os.path.join(OUT_DIR, "last.pth")
     start_ep = 1
+    best_map = 0.0
     if os.path.exists(last_path):
         ck = torch.load(last_path, map_location="cpu", weights_only=False)
         model.load_state_dict(ck["model"])
@@ -123,7 +124,37 @@ def main():
         sched.load_state_dict(ck["sched"])
         scaler.load_state_dict(ck["scaler"])
         start_ep = ck["epoch"] + 1
+        best_map = ck.get("best_map", 0.0)
         print(f"[ssd] 从 last.pth 续训: 已完成 {ck['epoch']}/{EPOCHS} 轮", flush=True)
+
+    # 验证集评估器: 每轮算 mAP, 按验证集选最优权重存 best.pth
+    model.eval()
+    names = get_val_images(DATA_ROOT)
+    gt_sizes = {n: Image.open(os.path.join(DATA_ROOT, "images", "val", n)).size
+                for n in names}
+    gts = load_gt_labels(os.path.join(DATA_ROOT, "labels", "val"), names, gt_sizes)
+
+    def eval_map():
+        model.eval()
+        preds = {}
+        with torch.no_grad():
+            for i in range(0, len(val_ds), 8):
+                chunk = [val_ds[j] for j in range(i, min(i + 8, len(val_ds)))]
+                xs = [c[0].to(device) for c in chunk]
+                outs = model(xs)
+                for (x, _, name, (W, H)), out in zip(chunk, outs):
+                    b = out["boxes"].cpu().numpy()
+                    s = out["scores"].cpu().numpy()
+                    l = out["labels"].cpu().numpy() - 1
+                    keep = s > 0.001
+                    b, s, l = b[keep], s[keep], l[keep]
+                    # 缩放回原图
+                    b[:, [0, 2]] *= W / IMGSZ
+                    b[:, [1, 3]] *= H / IMGSZ
+                    preds[name] = [(int(l[k]), float(b[k][0]), float(b[k][1]),
+                                    float(b[k][2]), float(b[k][3]), float(s[k]))
+                                   for k in range(len(b))]
+        return evaluate_full(preds, gts)["mAP"]
 
     for ep in range(start_ep, EPOCHS + 1):
         model.train()
@@ -148,9 +179,18 @@ def main():
         # 每轮存断点
         torch.save({"model": model.state_dict(), "opt": opt.state_dict(),
                     "sched": sched.state_dict(), "scaler": scaler.state_dict(),
-                    "epoch": ep}, last_path)
-
-    torch.save(model.state_dict(), os.path.join(OUT_DIR, "best.pth"))
+                    "epoch": ep, "best_map": best_map}, last_path)
+        # 按验证集 mAP 选最优权重 (原实现存最后一轮, 过拟合时会吃亏)
+        mAP = eval_map()
+        flag = ""
+        if mAP > best_map:
+            best_map = mAP
+            torch.save(model.state_dict(), os.path.join(OUT_DIR, "best.pth"))
+            flag = "  <- best.pth"
+        msg2 = f"[ssd] epoch {ep}  val mAP={mAP:.4f}{flag}"
+        print(msg2, flush=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(msg2 + "\n")
 
     # ---- 统一评估 ----
     model.eval()

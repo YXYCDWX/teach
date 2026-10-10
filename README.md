@@ -75,5 +75,7 @@ python tools/eval_unified.py outputs\yolo11\train\weights\best.pt 6
   小目标（远景行人）与稀有类数量受数据量制约
 - 验证集仅有 5 类存在真值（car/bus/motorcycle/bicycle/pedestrian，
   其余 5 类 num_gt=0），mAP 只在这 5 类上取平均
+- 3D 锚框正样本匹配用 BEV 中心距离 (<2m) 而非标准 BEV IoU 阈值，
+  属简化实现，mAP 上限低于标准 PointPillars；为保持已训模型可比性未更改
 - 稀有类学习依赖按类归一化的分类损失（见 `models3d.py` 注释与
   `tools/test_overfit*.py` 验证脚本）
