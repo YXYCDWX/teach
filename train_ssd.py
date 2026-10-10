@@ -154,7 +154,7 @@ def main():
                     preds[name] = [(int(l[k]), float(b[k][0]), float(b[k][1]),
                                     float(b[k][2]), float(b[k][3]), float(s[k]))
                                    for k in range(len(b))]
-        return evaluate_full(preds, gts)["mAP"]
+        return evaluate_full(preds, gts)["AP50"]["mAP"]
 
     for ep in range(start_ep, EPOCHS + 1):
         model.train()
