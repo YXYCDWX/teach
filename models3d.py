@@ -97,16 +97,18 @@ class AnchorHead(nn.Module):
         return cls, reg, drc
 
     def loss(self, cls_map, reg_map, dir_map, anchors, gt_boxes_list,
-             pos_thr=2.0, neg_thr=3.5):
+             pos_thr=2.0):
         """计算损失
         cls_map: (B,A,X,Y)  reg_map: (B,A*7,X,Y)  dir_map: (B,A*2,X,Y)
         anchors: (X,Y,A,7)  gt_boxes_list: 每样本 (M,8)
+        注: 全体非正样本锚框 (cls_t==0) 均作为背景参与 focal 损失
+        (与 SECOND/PointPillars 主流做法一致, 易负样本由 (1-p)^gamma 降权),
+        不区分远近负样本
         """
         B, A, X, Y = cls_map.shape
         device = cls_map.device
         anc = anchors.view(-1, 7).to(device)            # (P,7) P=X*Y*A
         pos_thr = torch.as_tensor(pos_thr, device=device)
-        neg_thr = torch.as_tensor(neg_thr, device=device)
 
         cls_flat = cls_map.permute(0, 2, 3, 1).reshape(B, -1)          # (B,P) 每锚框 1 个前景分数
         reg_flat = reg_map.permute(0, 2, 3, 1).reshape(B, -1, 7)

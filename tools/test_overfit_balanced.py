@@ -43,7 +43,7 @@ opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
 
 def balanced_loss(cls_map, reg_map, dir_map, anchors, gt_boxes_list,
-                  pos_thr=2.0, neg_thr=3.5):
+                  pos_thr=2.0):
     """与 AnchorHead.loss 相同的匹配逻辑, 但分类损失按类别各自归一化"""
     B, A, X, Y = cls_map.shape
     device = cls_map.device
