@@ -7,6 +7,7 @@
 """
 import os
 import sys
+import shutil
 import numpy as np
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -20,6 +21,12 @@ POINT_RANGE = (-50.0, -50.0, -5.0, 50.0, 50.0, 3.0)  # x1,y1,z1,x2,y2,z2
 
 
 def main():
+    # 重跑前清空旧产物, 防止逻辑变更后残留陈旧样本
+    for split in ["train", "val"]:
+        p = os.path.join(OUT_DIR, split)
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+        os.makedirs(p, exist_ok=True)
     tables = NuScenesTables(DATAROOT)
     scenes = sorted(tables.scenes(), key=lambda s: s["name"])
     train_scenes = {s["token"] for s in scenes[:8]}

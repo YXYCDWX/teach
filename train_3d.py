@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """3D 检测训练: PointPillars / VoxelNet
-用法: python train_3d.py pointpillars|voxelnet
+用法: python train_3d.py pointpillars|voxelnet|centerpoint
 - AMP 混合精度, AdamW + 余弦退火
 - 评估: nuScenes 中心距离 mAP (eval3d)
 """
 import os
 import sys
-import json
 import time
 import numpy as np
 import torch
@@ -23,15 +22,10 @@ GRID_XY = 200
 
 
 def get_grid(mode):
-    if mode in ("pillar", "centerpoint"):
+    # CLI 名: pointpillars/voxelnet/centerpoint; pillar 骨干用 2D 网格, voxel 用 3D
+    if mode in ("pointpillars", "pillar", "centerpoint"):
         return (GRID_XY, GRID_XY)          # pillar: z 维为 1
     return (GRID_XY, GRID_XY, 8)           # voxel: z 8 格
-
-
-def move_batch(batch, device):
-    v, c, n, gt = batch
-    return (v.to(device, non_blocking=True), c.to(device, non_blocking=True),
-            n.to(device, non_blocking=True), gt)
 
 
 @torch.no_grad()

@@ -10,7 +10,7 @@ from nuscenes_common import CLASS_NAMES
 DIST_THRS = [0.5, 1.0, 2.0, 4.0]
 
 
-def match_one_class(gt_boxes, gt_scores_none, pred_boxes, pred_scores, dist_thr):
+def match_one_class(gt_boxes, pred_boxes, pred_scores, dist_thr):
     """单类别单阈值匹配
     gt_boxes: (G,7) pred_boxes: (P,7) (已按分数降序)
     返回 matched: (P,) 是否命中
@@ -71,7 +71,7 @@ def evaluate_3d(predictions, gts):
                 ngt += len(gt_b[gi])
                 if len(pr_b[gi]) == 0:
                     continue
-                matched = match_one_class(gt_b[gi], None, pr_b[gi], pr_s[gi], thr)
+                matched = match_one_class(gt_b[gi], pr_b[gi], pr_s[gi], thr)
                 matched_all.extend(matched.tolist())
                 scores_all.extend(pr_s[gi].tolist())
             ap = _ap(np.array(scores_all), np.array(matched_all), ngt) if ngt else None

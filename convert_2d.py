@@ -44,8 +44,12 @@ def main():
     val_scenes = {s["token"] for s in scenes[8:]}
     print("共 %d 个场景: 训练 %d, 验证 %d" % (len(scenes), len(train_scenes), len(val_scenes)))
 
+    # 重跑前清空旧产物, 防止逻辑变更后残留陈旧样本
     for sub in ["images/train", "images/val", "labels/train", "labels/val"]:
-        os.makedirs(os.path.join(OUT_DIR, sub.replace("/", os.sep)), exist_ok=True)
+        p = os.path.join(OUT_DIR, sub.replace("/", os.sep))
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+        os.makedirs(p, exist_ok=True)
 
     stats = {"train": 0, "val": 0}       # 图像数
     box_stats = {"train": 0, "val": 0}   # 标注框数

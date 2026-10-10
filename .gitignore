@@ -11,6 +11,7 @@ __pycache__/
 *.pth
 *.pt
 !yolo11n.pt
+!yolo26n.pt
 
 # PPT 原件 (课程资料, 二进制)
 *.pptx

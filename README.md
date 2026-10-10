@@ -70,6 +70,10 @@ python tools/eval_unified.py outputs\yolo11\train\weights\best.pt 6
 | YOLO11n | 0.1617 | 0.557 |
 | 其余 7 个模型 | 链式训练中 | — |
 
-已知限制：v1.0-mini 仅 324 训练帧，小目标（远景行人）与稀有类数量受数据量
-制约；稀有类学习依赖按类归一化的分类损失（见 `models3d.py` 注释与
-`tools/test_overfit*.py` 验证脚本）。
+已知限制：
+- v1.0-mini 仅 324 个样本帧（每个样本含 6 路相机，展开为 1944 张训练图像），
+  小目标（远景行人）与稀有类数量受数据量制约
+- 验证集仅有 5 类存在真值（car/bus/motorcycle/bicycle/pedestrian，
+  其余 5 类 num_gt=0），mAP 只在这 5 类上取平均
+- 稀有类学习依赖按类归一化的分类损失（见 `models3d.py` 注释与
+  `tools/test_overfit*.py` 验证脚本）

@@ -32,7 +32,9 @@ BATCH = 4
 
 
 def boxes_to_rois(boxes_np, batch_idx, device):
-    """3D 框 (M,7)[x,y,z,w,l,h,yaw] -> BEV 轴对齐包围盒 (M,5)[b,x1,y1,x2,y2] (网格坐标)"""
+    """3D 框 (M,7)[x,y,z,w,l,h,yaw] -> BEV 轴对齐包围盒 (M,5)[b,x1,y1,x2,y2] (网格坐标)
+    注意: roi_align 的 x 对应特征图最后一维。伪图像写入为 img[b,:,ix,iy]
+    (dim2=X, dim3=Y, 见 models3d.py), 故 roi 的 x 槽位须放 gy、y 槽位放 gx"""
     if len(boxes_np) == 0:
         return torch.zeros(0, 5, device=device)
     x, y, w, l, yaw = (boxes_np[:, 0], boxes_np[:, 1],
@@ -44,7 +46,7 @@ def boxes_to_rois(boxes_np, batch_idx, device):
     gx2 = np.clip((x + hx + 50.0) / CELL, 1e-3, GRID_XY)
     gy2 = np.clip((y + hy + 50.0) / CELL, 1e-3, GRID_XY)
     rois = np.stack([np.full(len(x), batch_idx, dtype=np.float32),
-                     gx1, gy1, gx2, gy2], axis=1)
+                     gy1, gx1, gy2, gx2], axis=1)
     return torch.as_tensor(rois, dtype=torch.float32, device=device)
 
 
