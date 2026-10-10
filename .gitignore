@@ -1,0 +1,16 @@
+# 数据 (5GB+, 不入库)
+v1.0-mini/
+v1.0-mini.tar
+nu2d/
+nu3d/
+
+# 训练产物与缓存
+outputs/
+__pycache__/
+*.pyc
+*.pth
+*.pt
+!yolo11n.pt
+
+# PPT 原件 (课程资料, 二进制)
+*.pptx
