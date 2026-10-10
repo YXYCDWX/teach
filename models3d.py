@@ -187,9 +187,12 @@ class AnchorHead(nn.Module):
 
     @torch.no_grad()
     def predict(self, cls_map, reg_map, dir_map, anchors, score_thr=0.1,
-                nms_dist=0.6, max_det=100):
+                nms_dist=0.6, max_det=100, pre_nms_topk=2000):
         """解码预测框
         返回每样本: dict(cls ids (M,), boxes (M,7) numpy, scores (M,))
+        注: NMS 前先取分数最高的 pre_nms_topk 个候选再做贪心 NMS。
+        避免在数十万低分锚框上做纯 Python 循环 (否则 CPU 爆炸)。
+        分数最高的候选不受此截断影响, 最终结果与全量 NMS 基本一致。
         """
         B, A, X, Y = cls_map.shape
         device = cls_map.device
@@ -204,13 +207,16 @@ class AnchorHead(nn.Module):
         for b in range(B):
             conf = cls_flat[b]                          # (P,)
             cls_id = anchor_cls
-            keep = conf > score_thr
-            if keep.sum() == 0:
+            # 先截断到分数最高的 pre_nms_topk 个候选 (GPU), 再做 NMS
+            k = min(pre_nms_topk, conf.numel())
+            top_conf, top_i = torch.topk(conf, k)
+            sel = top_conf > score_thr
+            if sel.sum() == 0:
                 results.append({"cls": np.zeros(0, dtype=int),
                                 "boxes": np.zeros((0, 7), dtype=np.float32),
                                 "scores": np.zeros(0)})
                 continue
-            idx = torch.where(keep)[0]
+            idx = top_i[sel]
             res = decode_boxes(reg_flat[b][idx], anc[idx])
             # 朝向修正: dir bin=1 时 yaw 加 pi
             drc = dir_flat[b][idx]
@@ -294,7 +300,7 @@ class CenterHead(nn.Module):
         # CenterFocal: 正样本 -log(p), 负样本按 (1-t)^4 降权
         # 正样本按类各自归一化 + 负样本全局平均 (与 AnchorHead 修复完全同构):
         # 负压摊到全部格点上取均值, 稀有类通道不会被负样本海啸压死
-        # (8 帧过拟合验证见 tools/test_overfit_center.py)
+        # (8 帧过拟合验证见 tools/one_off/test_overfit_center.py)
         bce = F.binary_cross_entropy_with_logits(hm, hm_t, reduction="none")
         neg_w = (1 - hm_t).pow(4)
         weighted = bce * torch.where(hm_t == 1, torch.ones_like(hm_t), neg_w)

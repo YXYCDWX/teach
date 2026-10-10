@@ -3,6 +3,7 @@ v1.0-mini/
 v1.0-mini.tar
 nu2d/
 nu3d/
+nu3d.tar.gz
 
 # 训练产物与缓存
 outputs/

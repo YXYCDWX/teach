@@ -37,7 +37,8 @@ nuScenes v1.0-mini（10 场景）：前 8 场景训练（1944 帧）、后 2 验
 ├─ train_rcnn3d.py          # 两阶段 3D (PointPillars 提候选 + RoI 精修)
 ├─ eval2d.py                # 统一 2D 评估器 (COCO 风格 mAP, 各模型同口径)
 ├─ eval3d.py                # 3D 评估 (nuScenes 风格 BEV 中心距离 mAP)
-├─ tools/                   # 审计/诊断/统一评估入口/可视化
+├─ tools/                   # 审计/统一评估/混淆矩阵/BEV 可视化 (常用工具)
+│   └─ one_off/             # 一次性诊断/过拟合验证脚本 (归档)
 ├─ v1.0-mini/               # 原始数据集 (不入库)
 └─ outputs/                 # 训练产物 (不入库)
 ```
@@ -63,12 +64,23 @@ python tools/eval_unified.py outputs\yolo11\train\weights\best.pt 6
 
 ## 当前结果
 
-2D 统一评估（480 张验证图，AP 标准协议）：
+### 2D（相机图像，480 张验证图，COCO 风格统一评估）
 
-| 模型 | mAP@0.5 | car AP50 |
-|---|---|---|
-| YOLO11n | 0.1617 | 0.557 |
-| 其余 7 个模型 | 链式训练中 | — |
+| 模型 | mAP@0.5 | mAP@0.5:0.95 | car AP50 |
+|---|---|---|---|
+| Faster R-CNN | 0.2416 | 0.0921 | 0.562 |
+| YOLO11n | 0.1617 | 0.0670 | 0.557 |
+| YOLO26n | 0.1454 | 0.0587 | 0.462 |
+| SSD-Lite | 0.0867 | 0.0349 | 0.379 |
+
+### 3D（LiDAR 点云，BEV 中心距离 mAP）
+
+| 模型 | mAP | car | bus | motorcycle | bicycle | pedestrian |
+|---|---|---|---|---|---|---|
+| CenterPoint | 0.0086 | 0.017 | 0.001 | 0.003 | 0.000 | 0.023 |
+| VoxelNet | 0.0047 | 0.013 | 0.001 | 0.000 | 0.000 | 0.010 |
+| PointPillars | 0.0028 | 0.006 | 0.000 | 0.002 | 0.000 | 0.005 |
+| Voxel R-CNN | 0.0011 | 0.002 | 0.000 | 0.003 | 0.000 | 0.001 |
 
 已知限制：
 - v1.0-mini 仅 324 个样本帧（每个样本含 6 路相机，展开为 1944 张训练图像），
@@ -78,4 +90,4 @@ python tools/eval_unified.py outputs\yolo11\train\weights\best.pt 6
 - 3D 锚框正样本匹配用 BEV 中心距离 (<2m) 而非标准 BEV IoU 阈值，
   属简化实现，mAP 上限低于标准 PointPillars；为保持已训模型可比性未更改
 - 稀有类学习依赖按类归一化的分类损失（见 `models3d.py` 注释与
-  `tools/test_overfit*.py` 验证脚本）
+  `tools/one_off/test_overfit*.py` 验证脚本）

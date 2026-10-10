@@ -8,7 +8,9 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, os.path.join(_ROOT, "tools"))
 from nuscenes_common import CLASS_NAMES
 from eval2d import get_val_images
 from report_confusion import load_gt, DATA

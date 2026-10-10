@@ -9,7 +9,7 @@ import sys
 import numpy as np
 import torch
 
-BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE)
 from dataset3d import NuScenes3D, compute_anchor_stats
 from models3d import PointPillars, build_anchors

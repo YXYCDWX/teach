@@ -5,10 +5,10 @@ import sys
 import math
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from nuscenes_common import NuScenesTables, frames_for_sample_data, ann_box_in_frame, box_corners, CATEGORY_MAP
 
-DATAROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "v1.0-mini")
+DATAROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "v1.0-mini")
 TARGET = "n015-2018-11-21-19-38-26+0800__CAM_FRONT_RIGHT__1542800850920339.jpg"
 
 T = NuScenesTables(DATAROOT)
