@@ -23,7 +23,7 @@ GRID_XY = 200
 
 
 def get_grid(mode):
-    if mode == "pillar":
+    if mode in ("pillar", "centerpoint"):
         return (GRID_XY, GRID_XY)          # pillar: z 维为 1
     return (GRID_XY, GRID_XY, 8)           # voxel: z 8 格
 
@@ -39,7 +39,10 @@ def evaluate(model, val_loader, anchors, device, mode):
     model.eval()
     predictions, gts = {}, {}
     is_center = (mode == "centerpoint")
-    for vi, (v, c, n, gt) in enumerate(val_loader):
+    key = 0                                   # 递增计数器: 预测/GT 逐帧对齐,
+    for v, c, n, gt in val_loader:            # 不依赖 batch 尺寸恒定
+        base = key
+        key += len(gt)
         v, c, n = v.to(device), c.to(device), n.to(device)
         with torch.autocast("cuda", dtype=torch.float16):
             if is_center:
@@ -54,13 +57,11 @@ def evaluate(model, val_loader, anchors, device, mode):
                 results = model.head.predict(cls_m, reg_m, dir_m, anchors,
                                              score_thr=0.05, nms_dist=0.6)
         for b, r in enumerate(results):
-            key = vi * len(gt) + b  # 占位, 用文件顺序命名
-            predictions[f"f{key}"] = r
+            predictions[f"f{base + b}"] = r
         for b, g in enumerate(gt):
-            key = vi * len(gt) + b
-            gts[f"f{key}"] = {"cls": g[:, 7].numpy().astype(int),
-                              "boxes": g[:, :7].numpy(),
-                              "scores": np.ones(len(g))}
+            gts[f"f{base + b}"] = {"cls": g[:, 7].numpy().astype(int),
+                                   "boxes": g[:, :7].numpy(),
+                                   "scores": np.ones(len(g))}
     return evaluate_3d(predictions, gts)
 
 

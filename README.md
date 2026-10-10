@@ -38,7 +38,6 @@ nuScenes v1.0-mini（10 场景）：前 8 场景训练（1944 帧）、后 2 验
 ├─ eval2d.py                # 统一 2D 评估器 (COCO 风格 mAP, 各模型同口径)
 ├─ eval3d.py                # 3D 评估 (nuScenes 风格 BEV 中心距离 mAP)
 ├─ tools/                   # 审计/诊断/统一评估入口/可视化
-├─ docs/                    # 实验报告
 ├─ v1.0-mini/               # 原始数据集 (不入库)
 └─ outputs/                 # 训练产物 (不入库)
 ```

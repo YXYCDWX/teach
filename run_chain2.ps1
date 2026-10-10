@@ -1,4 +1,4 @@
-# Full training chain (6 models). Each script auto-skips when done / resumes from checkpoint.
+# Full training chain (8 models). Each script auto-skips when done / resumes from checkpoint.
 $py = "D:\software\miniconda3\envs\dl\python.exe"
 $base = "D:\PythonProject\teach"
 

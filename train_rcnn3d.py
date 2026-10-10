@@ -72,7 +72,8 @@ def get_proposals(pp, u, anchors, device, k=PROPOSAL_K):
     out = []
     for r in results:
         order = np.argsort(-r["scores"])[:k]
-        out.append({"cls": r["cls"][order],
+        out.append({"cls": torch.as_tensor(r["cls"][order], dtype=torch.int64,
+                                           device=device),
                     "boxes": torch.as_tensor(r["boxes"][order], dtype=torch.float32,
                                              device=device),
                     "scores": torch.as_tensor(r["scores"][order], dtype=torch.float32,
@@ -173,11 +174,13 @@ def main():
 
     @torch.no_grad()
     def evaluate():
-        """验证: 精修后框 -> eval3d (与 train_3d 同一口径)"""
+        """验证: 精修后框 -> eval3d (与 train_3d 同一口径)
+        预测与 GT 用同一递增计数器编号, 保证逐帧对齐 (不依赖 batch 恒定)"""
         refine.eval()
         predictions, gts = {}, {}
         key = 0
         for v, c, n, gt in val_loader:
+            base = key
             props, fg_logit, res, _ = forward_batch(pp, refine, (v, c, n, gt),
                                                     anchors, device)
             if fg_logit is not None:
@@ -188,20 +191,22 @@ def main():
                     fg = fg_all[off:off + k]
                     boxes = decode_boxes(res[off:off + k], p["boxes"]).cpu().numpy()
                     scores = p["scores"].cpu().numpy() * fg
-                    predictions[f"f{key}"] = {"cls": p["cls"],
-                                              "boxes": boxes.astype(np.float32),
-                                              "scores": scores.astype(np.float32)}
+                    predictions[f"f{base + b}"] = {
+                        "cls": p["cls"].cpu().numpy(),
+                        "boxes": boxes.astype(np.float32),
+                        "scores": scores.astype(np.float32)}
                     off += k
             else:
-                for p in props:
-                    predictions[f"f{key}"] = {"cls": p["cls"],
-                                              "boxes": p["boxes"].cpu().numpy().astype(np.float32),
-                                              "scores": p["scores"].cpu().numpy()}
+                for b, p in enumerate(props):
+                    predictions[f"f{base + b}"] = {
+                        "cls": p["cls"].cpu().numpy(),
+                        "boxes": p["boxes"].cpu().numpy().astype(np.float32),
+                        "scores": p["scores"].cpu().numpy()}
             for b, g in enumerate(gt):
-                gts[f"f{key}"] = {"cls": g[:, 7].numpy().astype(int),
-                                  "boxes": g[:, :7].numpy(),
-                                  "scores": np.ones(len(g))}
-                key += 1
+                gts[f"f{base + b}"] = {"cls": g[:, 7].numpy().astype(int),
+                                       "boxes": g[:, :7].numpy(),
+                                       "scores": np.ones(len(g))}
+            key = base + len(gt)
         refine.train()
         return evaluate_3d(predictions, gts)
 

@@ -25,8 +25,6 @@ OUT_DIR = os.path.join(BASE, "outputs", "ssd")
 EPOCHS = 20
 BATCH = 16
 IMGSZ = 320
-MEAN = [0.485, 0.456, 0.406]
-STD = [0.229, 0.224, 0.225]
 
 
 class Nu2D(Dataset):
@@ -38,7 +36,6 @@ class Nu2D(Dataset):
         self.files = sorted(os.listdir(self.img_dir))
         self.augment = augment and split == "train"
         self.to_tensor = torchvision.transforms.ToTensor()
-        self.norm = torchvision.transforms.Normalize(MEAN, STD)
 
     def __len__(self):
         return len(self.files)
@@ -69,7 +66,9 @@ class Nu2D(Dataset):
                 boxes[:, 2] = W - b[:, 0]
 
         img = img.resize((IMGSZ, IMGSZ), Image.BILINEAR)
-        x = self.norm(self.to_tensor(img))
+        # 只做 ToTensor (0-1): ssdlite320 内部 transform 自带 ImageNet 归一化,
+        # 数据集侧再归一化会造成双重归一化, 压低特征幅值损害收敛
+        x = self.to_tensor(img)
         if len(boxes):
             # 框坐标缩放到 320
             boxes = boxes.clone()

@@ -33,7 +33,7 @@ def collect_predictions(model):
     preds = {}
     for name in names:
         r = model.predict(os.path.join(VAL_IMG_DIR, name),
-                          conf=0.001, iou=0.6, max_det=300,
+                          conf=0.001, iou=0.7, max_det=300,
                           imgsz=IMGSZ, verbose=False)[0]
         boxes = r.boxes
         plist = []

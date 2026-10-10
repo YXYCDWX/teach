@@ -145,10 +145,12 @@ def main():
     preds = {}
     with torch.no_grad():
         for i in range(0, len(val_ds), 4):
-            chunk = [val_ds[j] for j in range(i, min(i + 4, len(val_ds)))]
+            idx = list(range(i, min(i + 4, len(val_ds))))
+            chunk = [val_ds[j] for j in idx]
             xs = [c[0].to(device) for c in chunk]
             outs = model(xs)
-            for (_, _, name, _), out in zip(chunk, outs):
+            for j, out in zip(idx, outs):
+                name = val_ds.files[j]
                 b = out["boxes"].cpu().numpy()
                 s = out["scores"].cpu().numpy()
                 l = out["labels"].cpu().numpy() - 1
