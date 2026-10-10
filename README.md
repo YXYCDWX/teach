@@ -68,10 +68,10 @@ python tools/eval_unified.py outputs\yolo11\train\weights\best.pt 6
 
 | 模型 | mAP@0.5 | mAP@0.5:0.95 | car AP50 |
 |---|---|---|---|
-| Faster R-CNN | 0.2416 | 0.0921 | 0.562 |
+| Faster R-CNN | 0.2823 | 0.1020 | 0.605 |
 | YOLO11n | 0.1617 | 0.0670 | 0.557 |
 | YOLO26n | 0.1454 | 0.0587 | 0.462 |
-| SSD-Lite | 0.0867 | 0.0349 | 0.379 |
+| SSD-Lite | 0.0994 | 0.0384 | 0.380 |
 
 ### 3D（LiDAR 点云，BEV 中心距离 mAP）
 

@@ -176,7 +176,14 @@ def main():
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(msg2 + "\n")
 
-    # ---- 统一评估 (输出为原始图像坐标) ----
+    # ---- 统一评估 (加载验证集最优权重 best.pth, 使报告结果与所存最优模型一致) ----
+    best_path = os.path.join(OUT_DIR, "best.pth")
+    if os.path.exists(best_path):
+        model.load_state_dict(torch.load(best_path, map_location="cpu",
+                                         weights_only=False))
+        print(f"[frcnn] 统一评估使用 best.pth", flush=True)
+    else:
+        print("[frcnn] 未找到 best.pth, 使用当前权重评估", flush=True)
     model.eval()
     names = get_val_images(DATA_ROOT)
     gt_sizes = {n: Image.open(os.path.join(DATA_ROOT, "images", "val", n)).size
