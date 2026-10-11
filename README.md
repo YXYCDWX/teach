@@ -1,8 +1,8 @@
 # 智能驾驶感知：2D/3D 目标检测实验（从零开始）
 
 面向教学的完整复现工程：基于 nuScenes v1.0-mini，从零搭建 2D（相机图像）与
-3D（LiDAR 点云）两条目标检测流水线，横向对比经典检测器的四条技术路线
-（单阶段 / 两阶段 × 有锚框 / 无锚框）。所有训练脚本均可断点续训，中断后重跑自动接续。
+3D（LiDAR 点云）两条目标检测流水线，横向对比经典检测器的三条技术路线
+（2D 单阶段/两阶段 + 3D 无锚框）。所有训练脚本均可断点续训，中断后重跑自动接续。
 
 > **从零开始的动手顺序**：§0 概览 → §1 环境 → §2 数据 → §3 数据转换 → §4 训练
 > → §5 评估 → §6 可视化与出片。自上而下做一遍即可跑通整个项目。
@@ -11,24 +11,24 @@
 
 ## 0. 项目概览
 
-### 0.1 模型阵容（8 个）
+### 0.1 模型阵容（3 个）
 
 | 阵营 | 2D（相机图像） | 3D（LiDAR 点云） |
 |---|---|---|
-| 单阶段 · 有锚框 | YOLO11n、YOLO26n、SSD-Lite | PointPillars、VoxelNet |
-| 两阶段 · R-CNN | Faster R-CNN | Voxel R-CNN 风格（伪图像 RoI 精修） |
-| 单阶段 · 无锚框 | — | CenterPoint 风格（BEV 热力图峰值） |
+| 单阶段 · 有锚框 | YOLO11n | — |
+| 两阶段 · R-CNN | Faster R-CNN | — |
+| 单阶段 · 无锚框 | — | CenterPoint（BEV 热力图峰值） |
 
-- 2D 模型：Ultralytics（YOLO）/ torchvision 官方实现（SSD、Faster R-CNN）微调
-- 3D 模型：**纯 PyTorch 手写**骨干 + 检测头（不依赖 OpenPCDet / MMDetection3D），
-  仅 RoI 池化等成熟算子用 `torchvision.ops`
+- 2D 模型：Ultralytics（YOLO）/ torchvision 官方实现（Faster R-CNN）微调
+- 3D 模型：**纯 PyTorch 手写**柱体骨干 + CenterPoint 检测头（不依赖 OpenPCDet /
+  MMDetection3D），无锚框、无先验框匹配
 - 2D / 3D 管线严格分离：图像只喂 2D 模型，点云只喂 3D 模型，无多模态融合
 
 ### 0.2 建议学习路径
 
-1. **先 2D 后 3D**：2D 链路（§3.1 → §4.1 → §4.3）复用官方实现，最容易跑通、建立直觉
-2. **3D 从锚框头入手**：PointPillars（支柱编码 + 锚框头）→ VoxelNet（3D 体素）→
-   Voxel R-CNN（两阶段 RoI 精修）→ CenterPoint（无锚框热力图），技术演进脉络完整
+1. **先 2D 后 3D**：2D 链路（§3 → §4.1 → §4.3）复用官方实现，最容易跑通、建立直觉
+2. **3D 看无锚框路线**：CenterPoint（柱体编码 + BEV 热力图峰值），与 2D 的锚框范式
+   形成对照，展示"无锚框"检测思路
 3. 每训完一个模型就用 §5 统一评估器与 §6 可视化核验，再做下一个
 
 ---
@@ -139,10 +139,10 @@ python convert_3d.py
 
 ### 4.1 2D 训练
 
-**train_yolo.py** — YOLO11 / YOLO26 微调
+**train_yolo.py** — YOLO11 微调
 
 ```powershell
-python train_yolo.py [yolo11|yolo26]                     # 不填则两个依次训练
+python train_yolo.py [yolo11]                            # 缺省则训练全部 (当前仅 yolo11)
 python train_yolo.py yolo11 --aug strong --epochs 150    # 更强增强 + 更长训练
 python train_yolo.py yolo11 --aug strong --kfold 4       # 场景级 4 折交叉验证
 ```
@@ -152,18 +152,9 @@ python train_yolo.py yolo11 --aug strong --kfold 4       # 场景级 4 折交叉
   + 余弦退火、末段关 mosaic；颜色类仅常规 HSV 抖动（不反色/不灰度）
 - `--kfold K`：按**场景**切 K 折（避免同场景相邻帧泄漏），逐折训练报平均 mAP（±标准差）
 - `--tag`：给输出目录加后缀，便于与默认结果并存对比
-- 起点权重：根目录 `yolo11n.pt` / `yolo26n.pt`（Ultralytics 官方）
+- 起点权重：根目录 `yolo11n.pt`（Ultralytics 官方）
 - 断点续训：Ultralytics 自带 `last.pt`（`resume=True`）
-- 输出：`outputs/{yolo11|yolo26}/train/weights/best.pt`
-
-**train_ssd.py** — SSD-Lite 微调
-
-```powershell
-python train_ssd.py
-```
-
-- 超参：`EPOCHS=20, BATCH=16, IMGSZ=320`
-- 输出：`outputs/ssd/best.pth`
+- 输出：`outputs/yolo11/train/weights/best.pt`
 
 **train_frcnn.py** — Faster R-CNN 微调
 
@@ -177,47 +168,31 @@ python train_frcnn.py
 
 ### 4.2 3D 训练
 
-**train_3d.py** — PointPillars / VoxelNet / CenterPoint
+**train_3d.py** — CenterPoint
 
 ```powershell
-python train_3d.py [pointpillars|voxelnet|centerpoint] [epochs]
+python train_3d.py [epochs]          # 默认 50
 ```
 
-- 默认轮数：`pointpillars=60`、`voxelnet=40`、`centerpoint=50`
-- 默认 batch：pillar 类 = 4（`max_voxels=18000`）、voxel 类 = 2（`max_voxels=30000`）
+- 默认 batch = 4（`max_voxels=18000`）
 - 优化：AMP 混合精度 + AdamW(lr=1e-3) + 余弦退火；梯度裁剪 `clip_grad_norm=10`
-- 断点续训：`outputs/{mode}/last.pth`
-- 输出：`outputs/{mode}/best.pth`（每 5 轮或末轮按验证 mAP 存最优）、`train_log.txt`
-- 损失口径（分类）：
-  - 锚框头（PointPillars / VoxelNet）：sigmoid focal，按官方 OpenPCDet 口径正负样本
-    共用同一 `1/npos` 归一化（`sum(focal)/npos`）
-  - 无锚框头（CenterPoint）：**热力图目标 = 官方高斯斑**（`gaussian_radius` +
-    `draw_gaussian_to_heatmap`，OpenPCDet 口径），**损失 = 官方 `neg_loss_cornernet`**
-    （penalty-reduced focal，负样本按 `(1-gt)^4` 降权，`sum/num_pos` 归一化）
-
-**train_rcnn3d.py** — 两阶段 3D（Voxel R-CNN 风格）
-
-```powershell
-python train_rcnn3d.py [epochs]          # 默认 15
-```
-
-- 第一阶段冻结已训练的 PointPillars 提候选，第二阶段在伪图像上 `roi_align` 池化精修
-- **前置**：需先训好 `outputs/pointpillars/best.pth`
-- 损失对齐官方 OpenPCDet `RoIHeadTemplate`：先按 `fg_fraction=0.25` 采样 RoI 控制正负比，
-  分类用 BCE 按有效样本数归一化（`sum(bce)/valid_count`），回归仅对前景样本求 smooth L1
-  并按前景数归一化
-- 输出：`outputs/rcnn3d/best.pth`、`train_log.txt`
+- 断点续训：`outputs/centerpoint/last.pth`（含模型/优化器/调度器/轮次）
+- 输出：`outputs/centerpoint/best.pth`（每 5 轮或末轮按验证 mAP 存最优）、`train_log.txt`
+- 损失口径：**热力图目标 = 官方高斯斑**（`gaussian_radius` + `draw_gaussian_to_heatmap`，
+  OpenPCDet 口径），**损失 = 官方 `neg_loss_cornernet`**（penalty-reduced focal，
+  负样本按 `(1-gt)^4` 降权，`sum/num_pos` 归一化）
 
 ### 4.3 一键训练链
 
-**run_chain2.ps1**（Windows）— 8 模型串行，已完成的自动跳过、中断后重跑自动接续
+**run_chain2.ps1**（Windows）— 3 模型串行（YOLO11 → Faster R-CNN → CenterPoint），
+已完成的自动跳过、中断后重跑自动接续
 
 ```powershell
 conda activate dl
 powershell -File run_chain2.ps1
 ```
 
-**run_chain3d.sh**（Linux / 服务器）— 3D 四模型串行（PointPillars → VoxelNet → RCNN3D → CenterPoint）
+**run_chain3d.sh**（Linux / 服务器）— 3D 链（CenterPoint）
 
 ```bash
 bash run_chain3d.sh
@@ -232,7 +207,7 @@ bash run_chain3d.sh
 
 统一 2D / 3D 评估口径，保证跨模型可比。
 
-**eval2d.py** — 【库】统一 2D 评估器（YOLO / SSD / FRCNN 共用同一 GT 与 AP 计算口径）
+**eval2d.py** — 【库】统一 2D 评估器（YOLO / Faster R-CNN 共用同一 GT 与 AP 计算口径）
 
 - 指标：COCO 风格 mAP@0.5 与 mAP@0.5:0.95（全点插值）
 - 关键函数：`load_gt_labels` / `evaluate_full` / `get_val_images` / `iou_matrix`
@@ -272,15 +247,15 @@ python tools/audit_2d.py
 **tools/viz_bev.py** — BEV 鸟瞰图（点云 + 真值框绿 + 预测框红）
 
 ```powershell
-python tools/viz_bev.py <pointpillars|voxelnet|centerpoint> [帧数]
+python tools/viz_bev.py [帧数]
 ```
 
-- 输出：`outputs/viz_bev/<model>_bev_XX.jpg`
+- 输出：`outputs/viz_bev/centerpoint_bev_XX.jpg`
 
 **tools/make_video_2d.py** — CAM_FRONT 连续帧 2D 检测行车视频
 
 ```powershell
-python tools/make_video_2d.py [fps] [thr] [max_frames] [--model frcnn|yolo11|yolo26] [--split train|val]
+python tools/make_video_2d.py [fps] [thr] [max_frames] [--model frcnn|yolo11] [--split train|val]
 ```
 
 - 默认：`fps=12`（nuScenes 原生帧率）、`thr=0.3`、`max_frames=0`（全部帧）
@@ -308,18 +283,16 @@ teach/
 ├─ nuscenes_common.py        # 【库】nuScenes JSON 表解析 + 坐标变换 (全局<->传感器)
 ├─ convert_2d.py             # 数据: nuScenes -> YOLO 2D 数据集 (nu2d/)
 ├─ convert_3d.py             # 数据: nuScenes -> 3D 点云数据集 (nu3d/)
-├─ dataset3d.py              # 【库】3D 数据集 + 点云体素化 + 3D 几何增强
-├─ models3d.py               # 【库】PointPillars / VoxelNet / CenterPoint 检测头与损失
+├─ dataset3d.py              # 【库】3D 数据集 + 点云柱体化编码 + 3D 几何增强
+├─ models3d.py               # 【库】CenterPoint 检测头与损失
 ├─ eval2d.py                 # 【库】统一 2D 评估器 (COCO 风格 mAP)
 ├─ eval3d.py                 # 【库】统一 3D 评估器 (nuScenes 中心距离 mAP)
-├─ train_yolo.py             # 训练: YOLO11 / YOLO26
-├─ train_ssd.py              # 训练: SSD-Lite
+├─ train_yolo.py             # 训练: YOLO11
 ├─ train_frcnn.py            # 训练: Faster R-CNN
-├─ train_3d.py               # 训练: PointPillars / VoxelNet / CenterPoint
-├─ train_rcnn3d.py           # 训练: 两阶段 3D (PointPillars 提候选 + RoI 精修)
-├─ run_chain2.ps1            # 一键链: 8 模型串行训练 (Windows PowerShell)
-├─ run_chain3d.sh            # 一键链: 3D 四模型串行训练 (Linux/服务器 bash)
-├─ yolo11n.pt / yolo26n.pt   # YOLO 预训练起始权重 (Ultralytics 官方)
+├─ train_3d.py               # 训练: CenterPoint
+├─ run_chain2.ps1            # 一键链: 3 模型串行训练 (Windows PowerShell)
+├─ run_chain3d.sh            # 一键链: 3D 链训练 (Linux/服务器 bash)
+├─ yolo11n.pt                # YOLO 预训练起始权重 (Ultralytics 官方)
 ├─ tools/                    # 常用工具 (评估 / 可视化 / 出片 / 审计)
 │   ├─ eval_unified.py       # YOLO 系权重 -> 统一口径 mAP + 预测可视化
 │   ├─ report_confusion.py   # 固定工作点下的查准/查全与混淆矩阵
@@ -344,15 +317,12 @@ teach/
 |---|---|---|---|
 | Faster R-CNN | 0.2823 | 0.1020 | 0.605 |
 | YOLO11n | 0.1617 | 0.0670 | 0.557 |
-| YOLO26n | 0.1454 | 0.0587 | 0.462 |
-| SSD-Lite | 0.0994 | 0.0384 | 0.380 |
 
-> 数值取自 `outputs/{frcnn,ssd,yolo11,yolo26}_results.json`。
-> **YOLO 系列当前偏弱（需注意）**：YOLO11n / YOLO26n 的 mAP 明显低于两阶段
-> Faster R-CNN（0.1617 / 0.1454 vs 0.2823）。主因是 nano 级模型容量小、且 v1.0-mini
-> 仅 8 个训练场景（1944 张图）不足以支撑 10 类检测；其价值在速度而非精度，作为
-> 单阶段路线对照保留。如需提升，走 `train_yolo.py --aug strong --epochs 150`
-> 或 `--kfold 4`。
+> 数值取自 `outputs/{frcnn,yolo11}_results.json`。
+> **YOLO11n 当前偏弱（需注意）**：mAP 明显低于两阶段 Faster R-CNN（0.1617 vs 0.2823）。
+> 主因是 nano 级模型容量小、且 v1.0-mini 仅 8 个训练场景（1944 张图）不足以支撑 10 类
+> 检测；其价值在速度而非精度，作为单阶段路线对照保留。如需提升，走
+> `train_yolo.py --aug strong --epochs 150` 或 `--kfold 4`。
 
 ### 8.2 3D（LiDAR 点云，BEV 中心距离 mAP）
 
@@ -366,10 +336,6 @@ teach/
 > 该 0.0583 为单格硬标签口径下的第 30 轮验证值，权重已归档至
 > `outputs/centerpoint/_oldtarget/`（`last.pth` / `best.pth` / `train_log.txt`）。
 > 由于热力图目标已改为官方高斯斑，该数值与新代码不再对应，仅作历史对照。
-
-**PointPillars / VoxelNet / Voxel R-CNN**：早期「旧损失口径」下的权重已删除，
-待用当前对齐后的代码重训后补全。注意 RCNN3D 第一阶段依赖
-`outputs/pointpillars/best.pth`，**重训顺序须先 PointPillars 再 RCNN3D**。
 
 ### 8.3 视频演示产物
 
@@ -387,17 +353,8 @@ teach/
   小目标（远景行人）与稀有类数量受数据量制约
 - 验证集只有 5 类存在真值（car=920、bus=191、motorcycle=108、bicycle=53、
   pedestrian=1171，其余 5 类 `num_gt=0`），mAP 只在这 5 类上取平均
-- 3D 锚框正样本匹配用 BEV 中心距离（<2m）而非标准 BEV IoU 阈值，属简化实现，
-  mAP 上限低于标准 PointPillars；为保持已训模型可比性未更改
-- 3D 分类损失与热力图目标均已对齐官方口径，与「旧口径」的差异如下：
-  - 锚框头（PointPillars / VoxelNet）：官方 OpenPCDet 正负样本共用同一 `1/npos`
-    （`sum(focal)/npos`）；旧口径为正样本按类各自 `sum/npos_c` + 负样本 `.mean()`
-    （`mean` 会被约 80 万负样本锚框稀释约 `N/npos` 倍）。见 `models3d.py: AnchorHead.loss`
-  - 两阶段头（Voxel R-CNN）：官方 `RoIHeadTemplate` 先按 `fg_fraction` 采样 RoI 控制正负比，
-    分类用 BCE + `sum(bce)/valid_count`，回归仅前景样本并按其数量归一化；旧口径直接用
-    `focal.mean()`。见 `train_rcnn3d.py`
-  - 无锚框头（CenterPoint）：官方 CenterNet/CenterPoint 用**高斯斑热力图目标**
-    （`gaussian_radius` + `draw_gaussian_to_heatmap`）配 `neg_loss_cornernet`
-    （负样本按 `(1-gt)^4` 降权，`sum/num_pos` 归一化）；旧实现用**单格 0/1 硬标签**
-    且近中心衰减格无降权，会把高斯邻域当假阳性全量惩罚。见 `models3d.py: CenterHead.loss`
-- 对齐官方后，锚框头不再按类别单独归一化，稀有类召回可能低于此前的按类归一化变体
+- 3D 无锚框头（CenterPoint）热力图目标已对齐官方口径，与「旧口径」的差异如下：
+  - 官方 CenterNet/CenterPoint 用**高斯斑热力图目标**（`gaussian_radius` +
+    `draw_gaussian_to_heatmap`）配 `neg_loss_cornernet`（负样本按 `(1-gt)^4` 降权，
+    `sum/num_pos` 归一化）；旧实现用**单格 0/1 硬标签**且近中心衰减格无降权，
+    会把高斯邻域当假阳性全量惩罚。见 `models3d.py: CenterHead.loss`

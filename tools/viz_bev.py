@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """BEV 鸟瞰图可视化: 点云 + 真值框(绿) + 预测框(红)
-用法: python tools/viz_bev.py pointpillars [帧数]
-输出: outputs/viz_bev/<model>_bev_XX.jpg
+用法: python tools/viz_bev.py [帧数]
+输出: outputs/viz_bev/centerpoint_bev_XX.jpg
 """
 import os
 import sys
@@ -16,11 +16,12 @@ from matplotlib.patches import Polygon
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
-from dataset3d import NuScenes3D, compute_anchor_stats
-from models3d import PointPillars, VoxelNet, build_anchors, decode_boxes
+from dataset3d import NuScenes3D
+from models3d import PillarBackbone
 from nuscenes_common import CLASS_NAMES
 
 OUT_DIR = os.path.join(BASE, "outputs", "viz_bev")
+MODE = "centerpoint"
 
 
 def draw_box(ax, box, color, lw=1.5, label=None):
@@ -39,47 +40,16 @@ def draw_box(ax, box, color, lw=1.5, label=None):
 
 
 def main():
-    mode = sys.argv[1] if len(sys.argv) > 1 else "pointpillars"
-    n_show = int(sys.argv[2]) if len(sys.argv) > 2 else 6
+    n_show = int(sys.argv[1]) if len(sys.argv) > 1 else 6
     device = torch.device("cuda")
 
-    if mode == "rcnn3d":
-        # 两阶段: 冻结的 PointPillars (候选) + rcnn3d 精修头
-        from train_rcnn3d import RefineHead, forward_batch
-        pp_ckpt = torch.load(os.path.join(BASE, "outputs", "pointpillars",
-                                          "best.pth"), map_location="cuda",
-                             weights_only=False)
-        ckpt_path = os.path.join(BASE, "outputs", "rcnn3d", "best.pth")
-        ckpt = torch.load(ckpt_path, map_location="cuda", weights_only=False)
-        anchor_stats = pp_ckpt.get("anchor_stats") or compute_anchor_stats("train")
-        anchors = build_anchors(anchor_stats, 200, 200)
-        ds = NuScenes3D("val", mode="pillar", augment=False, max_voxels=18000)
-        pp = PointPillars(anchor_stats).to(device)
-        pp.load_state_dict(pp_ckpt["model"])
-        pp.eval()
-        refine = RefineHead().to(device)
-        refine.load_state_dict(ckpt["model"])
-        refine.eval()
-        model = None
-        print(f"载入 {ckpt_path}  (epoch {ckpt.get('epoch')}, mAP={ckpt.get('mAP'):.4f})")
-    else:
-        ckpt_path = os.path.join(BASE, "outputs", mode, "best.pth")
-        ckpt = torch.load(ckpt_path, map_location="cuda", weights_only=False)
-        anchor_stats = ckpt.get("anchor_stats") or compute_anchor_stats("train")
-        anchors = build_anchors(anchor_stats, 200, 200)
-        ds = NuScenes3D("val", mode=("voxel" if mode == "voxelnet" else "pillar"),
-                        augment=False,
-                        max_voxels=18000 if mode == "pointpillars" else 30000)
-        if mode == "centerpoint":
-            model = PointPillars(anchor_stats, head="center").to(device)
-        elif mode == "voxelnet":
-            model = VoxelNet(anchor_stats).to(device)
-        else:
-            model = PointPillars(anchor_stats).to(device)
-        model.load_state_dict(ckpt["model"])
-        model.eval()
-        pp = refine = None
-        print(f"载入 {ckpt_path}  (epoch {ckpt.get('epoch')}, mAP={ckpt.get('mAP'):.4f})")
+    ds = NuScenes3D("val", augment=False, max_voxels=18000)
+    ckpt_path = os.path.join(BASE, "outputs", MODE, "best.pth")
+    ckpt = torch.load(ckpt_path, map_location="cuda", weights_only=False)
+    model = PillarBackbone().to(device)
+    model.load_state_dict(ckpt["model"])
+    model.eval()
+    print(f"载入 {ckpt_path}  (epoch {ckpt.get('epoch')}, mAP={ckpt.get('mAP'):.4f})")
 
     # 选真值框最多的前 n_show 帧, 保证图里有目标可看
     n_boxes = []
@@ -92,38 +62,11 @@ def main():
     for rank, i in enumerate(pick):
         v, c, n, gt = ds[int(i)]
         with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16):
-            if mode == "rcnn3d":
-                props, fg_logit, res_t, _ = forward_batch(
-                    pp, refine,
-                    (v.unsqueeze(0), c.unsqueeze(0), n.unsqueeze(0), [gt]),
-                    anchors, device)
-            elif mode == "centerpoint":
-                hm, reg_m = model(v.unsqueeze(0).to(device),
-                                  c.unsqueeze(0).to(device),
-                                  n.unsqueeze(0).to(device), (200, 200))
-            else:
-                cls_m, reg_m, dir_m = model(v.unsqueeze(0).to(device),
-                                            c.unsqueeze(0).to(device),
-                                            n.unsqueeze(0).to(device),
-                                            (200, 200) if mode == "pointpillars"
-                                            else (200, 200, 8))
-        if mode == "rcnn3d":
-            p0 = props[0]
-            if fg_logit is not None:
-                fg = torch.sigmoid(fg_logit).cpu().numpy()
-                scores = p0["scores"].cpu().numpy() * fg
-                boxes = decode_boxes(res_t, p0["boxes"]).cpu().numpy().astype(np.float32)
-            else:
-                scores = p0["scores"].cpu().numpy()
-                boxes = p0["boxes"].cpu().numpy().astype(np.float32)
-            res = {"cls": p0["cls"].cpu().numpy(), "boxes": boxes,
-                   "scores": scores.astype(np.float32)}
-        elif mode == "centerpoint":
+            hm, reg_m = model(v.unsqueeze(0).to(device),
+                              c.unsqueeze(0).to(device),
+                              n.unsqueeze(0).to(device), (200, 200))
             res = model.head.predict(hm.float(), reg_m.float(),
                                      score_thr=0.3, nms_dist=0.6)[0]
-        else:
-            res = model.head.predict(cls_m.float(), reg_m.float(), dir_m.float(),
-                                     anchors, score_thr=0.3, nms_dist=0.6)[0]
 
         d = np.load(os.path.join(ds.root, ds.files[int(i)]))
         pts = d["points"]           # (N,4)
@@ -144,11 +87,11 @@ def main():
                         (b[0], b[1]), fontsize=6, color="red")
         ax.set_xlim(-50, 50); ax.set_ylim(-50, 50)
         ax.set_aspect("equal"); ax.invert_yaxis()  # x 向前, 图像习惯: 前方朝上
-        ax.set_title(f"{mode} BEV  {ds.files[int(i)]}\n"
+        ax.set_title(f"{MODE} BEV  {ds.files[int(i)]}\n"
                      f"GT {len(gtb)} 框 (绿)  预测 {n_pred} 框 (红, conf>=0.3)")
         ax.set_xlabel("x 前 (m)"); ax.set_ylabel("y 左 (m)")
         fig.tight_layout()
-        out = os.path.join(OUT_DIR, f"{mode}_bev_{rank:02d}.jpg")
+        out = os.path.join(OUT_DIR, f"{MODE}_bev_{rank:02d}.jpg")
         fig.savefig(out)
         plt.close(fig)
         gt_cls = [CLASS_NAMES[int(b[7])] for b in gtb]

@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
-"""nuScenes 3D 检测数据集: 点云体素化 (PointPillars 柱体 / VoxelNet 立方体)"""
+"""nuScenes 3D 检测数据集: 点云柱体化编码 (PointPillars 风格柱体)"""
 import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-from nuscenes_common import CLASS_NAMES
 
 POINT_RANGE = np.array([-50.0, -50.0, -5.0, 50.0, 50.0, 3.0], dtype=np.float32)
 
@@ -88,23 +87,16 @@ def voxelize(points, voxel_size, max_points, max_voxels):
 
 
 class NuScenes3D(Dataset):
-    """3D 检测数据集
-    mode: 'pillar' (PointPillars, 体素 z 维=1) 或 'voxel' (VoxelNet)
-    """
+    """3D 检测数据集: 点云 -> 柱体 (pillar, z 维=1)"""
 
-    def __init__(self, split, mode="pillar",
-                 pillar_size=(0.5, 0.5, 6.0), voxel_size=(0.5, 0.5, 1.0),
+    def __init__(self, split, pillar_size=(0.5, 0.5, 6.0),
                  max_points=32, max_voxels=18000, augment=True):
         self.root = os.path.join(BASE, "nu3d", split)
         self.files = sorted(os.listdir(self.root))
-        self.mode = mode
         self.max_points = max_points
         self.max_voxels = max_voxels
         self.augment = augment and split == "train"
-        if mode == "pillar":
-            self.voxel_size = pillar_size  # z 方向一个大柱体覆盖整个高度范围
-        else:
-            self.voxel_size = voxel_size
+        self.voxel_size = pillar_size  # z 方向一个大柱体覆盖整个高度范围
 
     def __len__(self):
         return len(self.files)
@@ -157,24 +149,3 @@ class NuScenes3D(Dataset):
         n = torch.stack([b[2] for b in batch])
         gt = [b[3] for b in batch]
         return v, c, n, gt
-
-
-def compute_anchor_stats(split="train"):
-    """统计各类别平均尺寸与中心高度, 用于生成锚框"""
-    root = os.path.join(BASE, "nu3d", split)
-    dims = {c: [] for c in range(len(CLASS_NAMES))}
-    zs = {c: [] for c in range(len(CLASS_NAMES))}
-    for f in os.listdir(root):
-        boxes = np.load(os.path.join(root, f))["boxes"]
-        for b in boxes:
-            c = int(b[7])
-            dims[c].append(b[3:6])   # w,l,h
-            zs[c].append(b[2])
-    stats = {}
-    for c in range(len(CLASS_NAMES)):
-        if dims[c]:
-            stats[c] = {"dwlh": np.mean(np.array(dims[c]), axis=0).tolist(),
-                        "z": float(np.mean(zs[c])), "count": len(dims[c])}
-        else:
-            stats[c] = {"dwlh": [1.0, 1.0, 1.0], "z": -1.0, "count": 0}
-    return stats

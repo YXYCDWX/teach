@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Faster R-CNN (torchvision 官方两阶段模型) 在 nu2d 上的微调与统一评估
 - COCO 预训练 fasterrcnn_resnet50_fpn, 替换分类头为 10+1 类
-- 统一评估器 eval2d, 与 YOLO/SSD 可比
+- 统一评估器 eval2d, 与 YOLO 可比
 - 支持断点续训: last.pth (模型/优化器/调度器/轮次), 已完成则跳过
 用法: python train_frcnn.py
 """

@@ -2,7 +2,7 @@
 """用训练好的 CenterPoint (3D 最优模型) 在 nuScenes LIDAR_TOP 连续帧上逐帧检测,
 渲染成 BEV 俯视行车视频。
 - 素材: 训练集前 8 个场景的 LIDAR_TOP (keyframe + sweep, 约 12Hz 连续)
-- 模型: outputs/centerpoint/best.pth (3D 四模型中验证集 mAP 最高)
+- 模型: outputs/centerpoint/best.pth (CenterPoint, 无锚框热力图检测)
 - 点云/标注在推理时按帧现场处理 (sweeps 无预转换 npz)
 用法: python tools/make_video_3d.py [fps] [score_thr] [max_frames] [ckpt_path]
 输出: outputs/videos/centerpoint_bev.mp4
@@ -24,8 +24,8 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 from nuscenes_common import (NuScenesTables, CLASS_NAMES, ann_box_in_frame,
                              frames_for_sample_data)
-from dataset3d import voxelize, compute_anchor_stats
-from models3d import PointPillars, build_anchors
+from dataset3d import voxelize
+from models3d import PillarBackbone
 
 DATAROOT = os.path.join(BASE, "v1.0-mini")
 OUT_DIR = os.path.join(BASE, "outputs", "videos")
@@ -58,14 +58,12 @@ def open_writer(path_no_ext, fps, size):
 
 def build_model(device, ckpt_path):
     ckpt = torch.load(ckpt_path, map_location="cuda", weights_only=False)
-    anchor_stats = ckpt.get("anchor_stats") or compute_anchor_stats("train")
-    model = PointPillars(anchor_stats, head="center").to(device)
+    model = PillarBackbone().to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
-    anchors = build_anchors(anchor_stats, 200, 200)
     print(f"载入 {ckpt_path}  (epoch {ckpt.get('epoch')}, mAP={ckpt.get('mAP'):.4f})",
           flush=True)
-    return model, anchors
+    return model
 
 
 def collect_frames(tables):
@@ -172,7 +170,7 @@ def main():
         frames = frames[:max_frames]
     print(f"共 {len(frames)} 帧 (训练集 LIDAR_TOP 连续帧), conf>={thr}", flush=True)
 
-    model, anchors = build_model(device, ckpt_path)
+    model = build_model(device, ckpt_path)
     renderer = BevRenderer()
     writer = None
     out_path = os.path.join(OUT_DIR, "centerpoint_bev")

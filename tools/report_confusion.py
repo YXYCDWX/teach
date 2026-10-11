@@ -118,4 +118,3 @@ def report(tag, weights):
 
 if __name__ == "__main__":
     report("YOLO11", r"D:\PythonProject\teach\outputs\yolo11\train\weights\best.pt")
-    report("YOLO26", r"D:\PythonProject\teach\outputs\yolo26\train\weights\best.pt")

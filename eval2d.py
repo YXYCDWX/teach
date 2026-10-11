@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """统一 2D 检测评估器
-所有 2D 模型 (YOLO11 / YOLO26 / SSD) 用同一套 GT 和同一 AP 计算方式,
+所有 2D 模型 (YOLO11 / Faster R-CNN) 用同一套 GT 和同一 AP 计算方式,
 保证结果可比。指标: COCO 风格 mAP@0.5 与 mAP@0.5:0.95 (全点插值)。
 """
 import os

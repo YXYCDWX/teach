@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """用训练好的 2D 模型在 nuScenes CAM_FRONT 连续帧上逐帧检测, 渲染成行车视频
 - 素材: 指定 split 场景的 CAM_FRONT (keyframe + sweep, 约 12Hz 连续)
-- 模型: --model 选择 frcnn / yolo11 / yolo26, 权重路径见 MODEL_SPECS
+- 模型: --model 选择 frcnn / yolo11, 权重路径见 MODEL_SPECS
 用法: python tools/make_video_2d.py [fps] [score_thr] [max_frames] [--model frcnn] [--split train|val]
 输出: outputs/videos/{model}_cam_front.mp4 (train) 或 {model}_cam_front_val.mp4 (val)
 """
@@ -30,7 +30,6 @@ CAM = "CAM_FRONT"
 MODEL_SPECS = {
     "frcnn":  ("frcnn", os.path.join(BASE, "outputs", "frcnn", "best.pth")),
     "yolo11": ("yolo",  os.path.join(BASE, "outputs", "yolo11", "train", "weights", "best.pt")),
-    "yolo26": ("yolo",  os.path.join(BASE, "outputs", "yolo26", "train", "weights", "best.pt")),
 }
 
 

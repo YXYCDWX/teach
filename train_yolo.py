@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""YOLO11 / YOLO26 在 nuScenes-mini 2D 检测上的训练与评估
+"""YOLO11 在 nuScenes-mini 2D 检测上的训练与评估
 - Ultralytics 预训练权重微调
-- 训练结束后用统一评估器 (eval2d) 在验证集上计算 mAP, 保证与 SSD 可比
+- 训练结束后用统一评估器 (eval2d) 在验证集上计算 mAP, 保证与 Faster R-CNN 可比
 - 可选增强/交叉验证 (为提升小数据集上的 YOLO 表现):
     --aug strong   打开更强的空间+混合增强 (degrees/scale/mixup/...)
     --kfold K      场景级 k 折交叉验证 (按场景切分, 避免同场景泄漏)
@@ -33,7 +33,7 @@ VAL_LBL_DIR = os.path.join(NU2D, "labels", "val")
 FOLD_DIR = os.path.join(NU2D, "folds")
 OUT_DIR = os.path.join(BASE, "outputs")
 
-MODELS = {"yolo11": "yolo11n.pt", "yolo26": "yolo26n.pt"}
+MODELS = {"yolo11": "yolo11n.pt"}
 
 # 增强预设: default 沿用 Ultralytics 默认; strong 针对小数据集加强空间/混合增强
 # 说明: 颜色类仅做常规 HSV 抖动(不反色/不灰度), 空间类用旋转/缩放/平移/剪切/透视
@@ -67,7 +67,7 @@ def collect_predictions(model, img_dir, names, imgsz):
 
 
 def evaluate_unified(model, img_dir, lbl_dir, names, imgsz):
-    """用统一评估器计算 mAP (与 SSD / Faster R-CNN 同口径)"""
+    """用统一评估器计算 mAP (与 Faster R-CNN 同口径)"""
     preds = collect_predictions(model, img_dir, names, imgsz)
     sizes = {n: Image.open(os.path.join(img_dir, n)).size for n in names}
     gts = load_gt_labels(lbl_dir, names, sizes)
@@ -184,7 +184,7 @@ def run_kfold(key, weights, args):
 def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("model", nargs="?", default=None,
-                    help="只训练指定模型: yolo11 / yolo26; 缺省则两个都训")
+                    help="只训练指定模型: yolo11; 缺省则训练全部")
     ap.add_argument("--epochs", type=int, default=50)
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--batch", type=int, default=16)
