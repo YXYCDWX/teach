@@ -113,9 +113,15 @@ python convert_3d.py
 
 **train_yolo.py** — YOLO11 / YOLO26 微调
 ```
-python train_yolo.py [yolo11|yolo26]     # 不填则两个依次训练
+python train_yolo.py [yolo11|yolo26]                     # 不填则两个依次训练
+python train_yolo.py yolo11 --aug strong --epochs 150    # 更强增强 + 更长训练
+python train_yolo.py yolo11 --aug strong --kfold 4       # 场景级 4 折交叉验证
 ```
-- 超参：EPOCHS=50, BATCH=16, IMGSZ=640（脚本内常量）
+- 超参：默认 EPOCHS=50, BATCH=16, IMGSZ=640；可用 `--epochs/--imgsz/--batch` 覆盖
+- `--aug strong`：加强空间增强（degrees/scale/shear/perspective）+ 混合增强（mosaic/mixup）
+  + 余弦退火（cos_lr）、末段关 mosaic；颜色类仅常规 HSV 抖动（不反色/不灰度）
+- `--kfold K`：按**场景**切 K 折（避免同场景相邻帧泄漏），逐折训练并报平均 mAP（±标准差）
+- `--tag`：给输出目录加后缀，便于与默认结果并存对比（不覆盖旧产物）
 - 起点权重：`yolo11n.pt` / `yolo26n.pt`（根目录）
 - 断点续训：Ultralytics 自带 `last.pt`（`resume=True`）
 - 输出：`outputs/{yolo11|yolo26}/train/weights/best.pt`
@@ -257,6 +263,12 @@ bash run_chain3d.sh
 | YOLO26n | 0.1454 | 0.0587 | 0.462 |
 | SSD-Lite | 0.0994 | 0.0384 | 0.380 |
 
+> **YOLO 系列当前偏弱（需注意）**：YOLO11n / YOLO26n 的 mAP 明显低于两阶段
+> Faster R-CNN（0.1617 / 0.1454 vs 0.2823）。主因是 nano 级模型容量小、且 v1.0-mini
+> 仅 8 个训练场景（1944 张图）不足以支撑 10 类检测；其价值在速度而非精度，作为
+> 单阶段路线对照保留。如需提升，走 `train_yolo.py --aug strong --epochs 150`
+> （加强空间/混合增强 + 更长训练）或 `--kfold 4`（场景级交叉验证，进一步可多折集成）。
+
 ### 3D（LiDAR 点云，BEV 中心距离 mAP）
 
 **当前保留的权重**（损失口径已对齐官方 OpenPCDet，详见 §5.2）：
@@ -285,6 +297,7 @@ bash run_chain3d.sh
 | 文件 | 内容 |
 |---|---|
 | `outputs/videos/frcnn_cam_front.mp4` | Faster R-CNN，CAM_FRONT 逐帧 2D 检测行车视频 |
+| `outputs/videos/yolo11_cam_front.mp4` | YOLO11，CAM_FRONT 逐帧 2D 检测行车视频（1878 帧/156s） |
 | `outputs/videos/centerpoint_bev.mp4` | CenterPoint，LIDAR_TOP 逐帧 3D 检测 BEV 俯视视频 |
 
 ---
