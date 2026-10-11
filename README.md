@@ -259,18 +259,26 @@ bash run_chain3d.sh
 
 ### 3D（LiDAR 点云，BEV 中心距离 mAP）
 
+**当前保留的权重**（损失口径已对齐官方 OpenPCDet，详见 §5.2）：
+
 | 模型 | mAP | car | bus | motorcycle | bicycle | pedestrian |
 |---|---|---|---|---|---|---|
-| CenterPoint | 0.0086 | 0.017 | 0.001 | 0.003 | 0.000 | 0.023 |
+| CenterPoint | 0.0583 | 0.213 | 0.032 | 0.001 | 0.000 | 0.045 |
+
+> CenterPoint 为第 30 轮验证值（`outputs/centerpoint/best.pth` 即该轮快照）。
+
+**以下三模型为「首版·旧口径」结果，权重已删除，待用对齐后的代码重训**
+（旧口径定义见 §7）：
+
+| 模型 | mAP(旧) | car | bus | motorcycle | bicycle | pedestrian |
+|---|---|---|---|---|---|---|
 | VoxelNet | 0.0047 | 0.013 | 0.001 | 0.000 | 0.000 | 0.010 |
 | PointPillars | 0.0028 | 0.006 | 0.000 | 0.002 | 0.000 | 0.005 |
 | Voxel R-CNN | 0.0011 | 0.002 | 0.000 | 0.003 | 0.000 | 0.001 |
 
-> 注：上表 3D 数值为首版结果；CenterPoint 修复分类损失负样本归一化（`.mean()`→`sum()/npos`）
-> 后重训，第 30 轮验证 mAP 已达 0.0583，显著优于旧结果。
-> 锚框头（PointPillars/VoxelNet）与两阶段头（Voxel R-CNN）的分类损失亦已对齐官方 OpenPCDet
-> 口径（详见 §5.2），但**尚未重训**，故表中这三行仍为对齐前结果；
-> 最新数值一律以 `outputs/*/train_log.txt` 为准。
+> 上表数字仅作历史留档，**权重文件已删除**（`outputs/{pointpillars,voxelnet,rcnn3d}/` 下已无
+> `best.pth`/`last.pth`）。注意 RCNN3D 第一阶段依赖 `outputs/pointpillars/best.pth`，
+> 重训顺序须先 PointPillars 再 RCNN3D；全部最新数值以 `outputs/*/train_log.txt` 为准。
 
 ### 视频演示产物
 
@@ -289,9 +297,15 @@ bash run_chain3d.sh
   mAP 只在这 5 类上取平均
 - 3D 锚框正样本匹配用 BEV 中心距离（<2m）而非标准 BEV IoU 阈值，属简化实现，
   mAP 上限低于标准 PointPillars；为保持已训模型可比性未更改
-- 3D 锚框头分类损失已对齐官方 OpenPCDet 口径：正负样本共用同一 `1/npos`（`sum(focal)/npos`），
-  不再对负样本取 `.mean()`（会被约 80 万负样本锚框稀释约 `N/npos` 倍）。
-  官方口径不按类别单独归一化，稀有类召回可能低于此前的按类归一化变体
-  （见 `models3d.py` 注释与 `tools/one_off/test_overfit*.py` 验证脚本）
-- CenterPoint 分类损失若误用负样本 `.mean()` 归一化，会被总格点数稀释约 1.3 万倍，
-  导致热力图饱和、每帧数百个乱框；已改为 CenterNet 原定义 `sum()/npos`（见 `models3d.py`）
+- **3D 分类损失已统一对齐官方口径，与「旧口径」的差异如下**（相关权重见 §6）：
+  - 锚框头（PointPillars/VoxelNet）：官方 OpenPCDet 正负样本共用同一 `1/npos`
+    （`sum(focal)/npos`）；旧口径为正样本按类各自 `sum/npos_c` + 负样本 `.mean()`
+    （`mean` 会被约 80 万负样本锚框稀释约 `N/npos` 倍）。见 `models3d.py: AnchorHead.loss`
+  - 两阶段头（Voxel R-CNN）：官方 `RoIHeadTemplate` 先按 `fg_fraction` 采样 RoI 控制正负比，
+    分类用 BCE + `sum(bce)/valid_count`（等价 `bce.mean()`）；旧口径直接用 `focal.mean()`。
+    见 `train_rcnn3d.py`
+  - CenterPoint：官方 CenterNet 定义 `(pos+neg)/npos`；旧口径用负样本 `.mean()`，
+    会被总格点数稀释约 1.3 万倍，导致热力图饱和、每帧数百个乱框；已改为 `sum()/npos`
+- 对齐官方后，锚框头不再按类别单独归一化，稀有类召回可能低于此前的按类归一化变体
+- §6 中 VoxelNet/PointPillars/Voxel R-CNN 三行的旧口径权重已删除、尚未重训，
+  最终指标待重训后补全
