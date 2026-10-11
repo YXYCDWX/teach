@@ -25,7 +25,7 @@ from eval2d import load_gt_labels, evaluate_full, get_val_images
 
 DATA_ROOT = os.path.join(BASE, "nu2d")
 OUT_DIR = os.path.join(BASE, "outputs", "frcnn")
-EPOCHS = 15
+EPOCHS = 10
 BATCH = 4
 NUM_CLASSES = len(CLASS_NAMES) + 1  # +背景
 
