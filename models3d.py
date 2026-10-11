@@ -159,20 +159,16 @@ class AnchorHead(nn.Module):
         dir_t = torch.stack(dir_targets)        # (B,P,2)
         pos_m = torch.stack(pos_masks)          # (B,P)
 
-        # 分类损失: focal, 按类别平衡归一化
-        # 原实现用全局 sum/n_pos 归一化, 正样本少的类别通道被负样本海啸压死 (恒输出 0)
-        # 改为: 每类正样本损失各自归一化取平均 + 负样本全局平均
-        # (8 帧过拟合对照验证: truck/bus/motorcycle/pedestrian 检出 0/0/20/0% -> 83/100/100/83%)
-        focal = sigmoid_focal_loss(cls_flat, cls_t)          # (B,P)
-        pos_loss, n_with_pos = cls_flat.new_zeros(()), 0
-        for c in range(self.n_classes):
-            cmask = anchor_cls == c
-            pmask = cmask.unsqueeze(0) & (cls_t == 1)
-            npos_c = pmask.sum()
-            if npos_c > 0:
-                pos_loss = pos_loss + focal[pmask].sum() / npos_c.float()
-                n_with_pos += 1
-        cls_loss = pos_loss / max(n_with_pos, 1) + focal[cls_t == 0].mean()
+        # 分类损失: sigmoid focal + 官方 OpenPCDet 归一化口径
+        #   (pcdet/models/dense_heads/anchor_head_template.py: get_cls_layer_loss)
+        #   官方: pos_normalizer = 每样本正样本数 npos, 正负样本共用同一 1/npos,
+        #         即 cls_loss = sum(focal) / npos / batch_size
+        #   原实现: 正样本按类各自 sum/npos_c 取平均 + 负样本 focal.mean()
+        #         (mean 除以全部约 80 万个负样本锚框), 负压被稀释约 N/npos 倍,
+        #         与 CenterHead 修复前同类问题; 且按类归一化 ≠ 官方全局 npos。
+        focal = sigmoid_focal_loss(cls_flat, cls_t)                    # (B,P)
+        npos_b = (cls_t == 1).sum(dim=1, keepdim=True).clamp(min=1.0)  # (B,1)
+        cls_loss = (focal / npos_b).sum() / B
 
         # 正样本回归与朝向损失
         n_pos = pos_m.sum().clamp(min=1).float()

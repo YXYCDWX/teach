@@ -142,6 +142,9 @@ python train_3d.py [pointpillars|voxelnet|centerpoint] [epochs]
 - 默认轮数：pointpillars=60、voxelnet=40、centerpoint=50
 - 默认 batch：pillar 类=4（max_voxels=18000）、voxel 类=2（max_voxels=30000）
 - 优化：AMP 混合精度 + AdamW(lr=1e-3) + 余弦退火
+- 分类损失：锚框头（PointPillars/VoxelNet）用 sigmoid focal，按官方 OpenPCDet 口径
+  正负样本共用同一 `1/npos` 归一化（`sum(focal)/npos`）；CenterPoint 用 CenterNet 原定义
+  `(pos+neg)/npos`。均不使用负样本 `.mean()`（会被海量负样本稀释）
 - 断点续训：`outputs/{mode}/last.pth`
 - 输出：`outputs/{mode}/best.pth`（每 5 轮或末轮按验证 mAP 存最优）、`train_log.txt`
 
@@ -150,6 +153,9 @@ python train_3d.py [pointpillars|voxelnet|centerpoint] [epochs]
 python train_rcnn3d.py [epochs]          # 默认 15
 ```
 - 第一阶段冻结已训练的 PointPillars 提候选，第二阶段在伪图像上 `roi_align` 池化精修
+- 损失对齐官方 OpenPCDet `RoIHeadTemplate`：先按 `fg_fraction=0.25` 采样 RoI 控制正负比，
+  分类用 BCE 并按有效样本数归一化（`sum(bce)/valid_count`），回归仅对前景样本求 smooth L1
+  并按前景数归一化（非 focal 的 `.mean()`）
 - 输出：`outputs/rcnn3d/best.pth`、`train_log.txt`
 
 ### 5.3 评估
@@ -261,7 +267,10 @@ bash run_chain3d.sh
 | Voxel R-CNN | 0.0011 | 0.002 | 0.000 | 0.003 | 0.000 | 0.001 |
 
 > 注：上表 3D 数值为首版结果；CenterPoint 修复分类损失负样本归一化（`.mean()`→`sum()/npos`）
-> 后重训，第 30 轮验证 mAP 已达 0.0583，显著优于旧结果，最新数值以 `outputs/*/train_log.txt` 为准。
+> 后重训，第 30 轮验证 mAP 已达 0.0583，显著优于旧结果。
+> 锚框头（PointPillars/VoxelNet）与两阶段头（Voxel R-CNN）的分类损失亦已对齐官方 OpenPCDet
+> 口径（详见 §5.2），但**尚未重训**，故表中这三行仍为对齐前结果；
+> 最新数值一律以 `outputs/*/train_log.txt` 为准。
 
 ### 视频演示产物
 
@@ -280,7 +289,9 @@ bash run_chain3d.sh
   mAP 只在这 5 类上取平均
 - 3D 锚框正样本匹配用 BEV 中心距离（<2m）而非标准 BEV IoU 阈值，属简化实现，
   mAP 上限低于标准 PointPillars；为保持已训模型可比性未更改
-- 稀有类学习依赖按类归一化的分类损失（见 `models3d.py` 注释与
-  `tools/one_off/test_overfit*.py` 验证脚本）
+- 3D 锚框头分类损失已对齐官方 OpenPCDet 口径：正负样本共用同一 `1/npos`（`sum(focal)/npos`），
+  不再对负样本取 `.mean()`（会被约 80 万负样本锚框稀释约 `N/npos` 倍）。
+  官方口径不按类别单独归一化，稀有类召回可能低于此前的按类归一化变体
+  （见 `models3d.py` 注释与 `tools/one_off/test_overfit*.py` 验证脚本）
 - CenterPoint 分类损失若误用负样本 `.mean()` 归一化，会被总格点数稀释约 1.3 万倍，
   导致热力图饱和、每帧数百个乱框；已改为 CenterNet 原定义 `sum()/npos`（见 `models3d.py`）

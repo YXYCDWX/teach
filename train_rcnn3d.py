@@ -3,6 +3,11 @@
 - 第一阶段: 已训练的 PointPillars (冻结), 解码候选框, 取置信度 top-K
 - 第二阶段: 候选框转 BEV 包围盒 -> torchvision roi_align 在伪图像上池化特征
             -> MLP -> 前景分数 + 7 维框残差 (复用 models3d 的 encode/decode)
+- 第二阶段损失对齐官方 OpenPCDet RoIHeadTemplate
+  (pcdet/models/roi_heads/roi_head_template.py: get_box_cls_layer_loss):
+    先按 fg_fraction 采样 RoI 控制正负比 (官方 ProposalTargetLayer),
+    分类用 BCE 并按有效样本数归一化 (sum / valid_count), 而非 focal.mean();
+    回归对前景样本求 smooth L1, 按前景数归一化
 - 评估与 train_3d 完全一致 (eval3d, nuScenes 中心距离 mAP), 支持断点续训
 用法: python train_rcnn3d.py [epochs=15]
 """
@@ -19,13 +24,16 @@ from torchvision.ops import roi_align
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 from dataset3d import NuScenes3D, compute_anchor_stats
-from models3d import PointPillars, build_anchors, encode_boxes, decode_boxes, sigmoid_focal_loss
+from models3d import PointPillars, build_anchors, encode_boxes, decode_boxes
 from eval3d import evaluate_3d
 
 OUT_DIR = os.path.join(BASE, "outputs", "rcnn3d")
 GRID_XY = 200
 CELL = 100.0 / GRID_XY          # 0.5 m/格, POINT_RANGE 100m
-PROPOSAL_K = 32                 # 每样本候选框数
+PROPOSAL_K = 32                 # 推理/评估每样本候选框数
+PROPOSAL_POOL = 128             # 训练候选池 (一阶段解码 max_det=128)
+SAMPLE_ROI = 32                 # 训练每样本采样 RoI 数 (官方 batch_size_per_image)
+FG_FRACTION = 0.25              # 采样中前景占比 (官方 fg_fraction)
 POS_DIST = 2.0                  # 候选-GT 同类中心距离匹配阈值 (m)
 EPOCHS = 15
 BATCH = 4
@@ -105,14 +113,34 @@ def match_and_target(props, gt, device):
     return fg_t, res_t
 
 
-def forward_batch(pp, refine, batch, anchors, device, with_head=True):
-    """共同前向: 返回 (每样本候选列表, 精修输出 fg_logit/res 或 None)"""
+def sample_rois(fg_t, sample=SAMPLE_ROI, fg_fraction=FG_FRACTION):
+    """按官方 ProposalTargetLayer 口径采样 RoI 下标:
+    取至多 fg_fraction 比例的前景 + 随机背景补足到 sample 个
+    返回被选中的候选下标 (LongTensor)。样本本身无候选时返回空张量
+    """
+    K = len(fg_t)
+    if K == 0:
+        return torch.zeros(0, dtype=torch.long, device=fg_t.device)
+    fg_idx = torch.where(fg_t > 0.5)[0]
+    bg_idx = torch.where(fg_t <= 0.5)[0]
+    n_fg = min(int(round(sample * fg_fraction)), len(fg_idx))
+    n_bg = min(sample - n_fg, len(bg_idx))
+    if len(fg_idx) > n_fg:
+        fg_idx = fg_idx[torch.randperm(len(fg_idx), device=fg_t.device)[:n_fg]]
+    if len(bg_idx) > n_bg:
+        bg_idx = bg_idx[torch.randperm(len(bg_idx), device=fg_t.device)[:n_bg]]
+    return torch.cat([fg_idx, bg_idx])
+
+
+def forward_batch(pp, refine, batch, anchors, device, with_head=True, prop_k=PROPOSAL_K):
+    """共同前向: 返回 (每样本候选列表, 精修输出 fg_logit/res 或 None)
+    prop_k: 每样本保留候选数 (训练用 PROPOSAL_POOL, 评估用 PROPOSAL_K)"""
     v, c, n, gt = batch
     v, c, n = v.to(device), c.to(device), n.to(device)
     with torch.autocast("cuda", dtype=torch.float16):
         _, _, _, u = pp(v, c, n, (GRID_XY, GRID_XY), return_feat=True)
     u = u.float()
-    props = get_proposals(pp, u, anchors, device)
+    props = get_proposals(pp, u, anchors, device, k=prop_k)
     rois = torch.cat([boxes_to_rois(p["boxes"].cpu().numpy(), b, device)
                       for b, p in enumerate(props)], dim=0)
     if len(rois) == 0 or not with_head:
@@ -218,21 +246,38 @@ def main():
         tot, n = {"cls": 0.0, "reg": 0.0}, 0
         for v, c, npts, gt in train_loader:
             props, fg_logit, res, _ = forward_batch(pp, refine, (v, c, npts, gt),
-                                                    anchors, device)
+                                                    anchors, device, prop_k=PROPOSAL_POOL)
             if fg_logit is None:
                 continue
             opt.zero_grad(set_to_none=True)
-            fg_ts, res_ts = [], []
+            # 逐样本匹配 + 按官方 ProposalTargetLayer 口径采样 RoI (控制正负比),
+            # 采样下标用各样本在前向输出中的全局偏移映射回整批拼接张量
+            s_logit, s_res, s_fg, s_res_t = [], [], [], []
+            off = 0
             for p, g in zip(props, gt):
+                k = len(p["boxes"])
                 ft, rt = match_and_target(p, g, device)
-                fg_ts.append(ft)
-                res_ts.append(rt)
-            fg_t = torch.cat(fg_ts)
-            res_t = torch.cat(res_ts)
-            cls_loss = sigmoid_focal_loss(fg_logit, fg_t).mean()
-            pos_m = fg_t > 0.5
-            reg_loss = (F.smooth_l1_loss(res[pos_m], res_t[pos_m])
-                        if pos_m.any() else fg_logit.new_zeros(()))
+                idx = sample_rois(ft)
+                s_logit.append(fg_logit[off + idx])
+                s_res.append(res[off + idx])
+                s_fg.append(ft[idx])
+                s_res_t.append(rt[idx])
+                off += k
+            sel_logit = torch.cat(s_logit)
+            if sel_logit.numel() == 0:
+                continue
+            sel_res = torch.cat(s_res)
+            sel_fg = torch.cat(s_fg)
+            sel_res_t = torch.cat(s_res_t)
+            # 分类: sigmoid + BCE, 按有效样本数归一化 (官方 RoIHeadTemplate:
+            #   sum(bce)/valid_count, 采样后全部样本有效, 即等价 bce.mean())
+            cls_loss = (F.binary_cross_entropy_with_logits(
+                sel_logit, sel_fg, reduction="none").sum() / sel_logit.numel())
+            # 回归: 仅前景样本 smooth L1, 按前景数归一化 (官方口径)
+            pos_m = sel_fg > 0.5
+            reg_loss = (F.smooth_l1_loss(sel_res, sel_res_t, reduction="none")
+                        .sum(dim=1)[pos_m].sum() / pos_m.sum().clamp(min=1).float()
+                        if pos_m.any() else sel_logit.new_zeros(()))
             loss = cls_loss + reg_loss
             scaler.scale(loss).backward()
             scaler.unscale_(opt)                       # AMP: 先还原梯度再裁剪,
