@@ -121,7 +121,17 @@ def main():
 
     log_path = os.path.join(OUT_DIR, "train_log.txt")
 
-    # 验证集评估器: 每轮算 mAP, 按验证集选最优权重存 best.pth
+    # last.pth 丢失但训练实际已跑完 (best.pth 在且日志已到最后轮) 时跳过重训,
+    # 避免 best.pth 尚在却从头重跑 15 轮的浪费
+    if (start_ep == 1 and os.path.exists(os.path.join(OUT_DIR, "best.pth"))
+            and os.path.exists(log_path)):
+        with open(log_path, encoding="utf-8") as f:
+            if f"epoch {EPOCHS}/{EPOCHS}" in f.read():
+                start_ep = EPOCHS + 1
+                print(f"[frcnn] 训练已完成 ({EPOCHS}/{EPOCHS} 轮, best.pth+train_log 在), 跳过训练",
+                      flush=True)
+
+    # 验证集评估器: 每轮算 mAP, 按验证集最优权重存 best.pth
     model.eval()
     names = get_val_images(DATA_ROOT)
     gt_sizes = {n: Image.open(os.path.join(DATA_ROOT, "images", "val", n)).size

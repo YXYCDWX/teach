@@ -17,7 +17,7 @@ from matplotlib.patches import Polygon
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 from dataset3d import NuScenes3D, compute_anchor_stats
-from models3d import PointPillars, VoxelNet, build_anchors
+from models3d import PointPillars, VoxelNet, build_anchors, decode_boxes
 from nuscenes_common import CLASS_NAMES
 
 OUT_DIR = os.path.join(BASE, "outputs", "viz_bev")
@@ -112,7 +112,7 @@ def main():
             if fg_logit is not None:
                 fg = torch.sigmoid(fg_logit).cpu().numpy()
                 scores = p0["scores"].cpu().numpy() * fg
-                boxes = res_t.cpu().numpy().astype(np.float32)
+                boxes = decode_boxes(res_t, p0["boxes"]).cpu().numpy().astype(np.float32)
             else:
                 scores = p0["scores"].cpu().numpy()
                 boxes = p0["boxes"].cpu().numpy().astype(np.float32)
