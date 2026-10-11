@@ -7,6 +7,7 @@ nu3d.tar.gz
 
 # 训练产物与缓存
 outputs/
+_backup/
 __pycache__/
 *.pyc
 *.pth

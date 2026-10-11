@@ -114,11 +114,36 @@ class NuScenes3D(Dataset):
         points = d["points"].copy()          # (N,4)
         boxes = d["boxes"].copy()            # (M,8)
 
-        if self.augment and np.random.rand() < 0.5:
+        if self.augment:
+            has_box = len(boxes) > 0
+            # 绕 z 轴随机旋转 (整个场景): 点/框中心 xy 旋转, 框朝向 yaw += theta
+            if np.random.rand() < 0.5:
+                theta = np.random.uniform(-np.pi / 4, np.pi / 4)
+                c, s = np.cos(theta), np.sin(theta)
+                R = np.array([[c, -s], [s, c]], dtype=np.float32)
+                points[:, :2] = points[:, :2] @ R.T
+                if has_box:
+                    boxes[:, :2] = boxes[:, :2] @ R.T
+                    boxes[:, 6] += theta
+            # 随机缩放 (点与框尺寸同步)
+            if np.random.rand() < 0.5:
+                sc = np.random.uniform(0.95, 1.05)
+                points[:, :2] *= sc
+                if has_box:
+                    boxes[:, :2] *= sc
+                    boxes[:, 3:6] *= sc
+            # 随机平移
+            if np.random.rand() < 0.5:
+                dt = np.random.uniform(-0.2, 0.2, size=2).astype(np.float32)
+                points[:, :2] += dt
+                if has_box:
+                    boxes[:, :2] += dt
             # 沿 x 轴翻转 (y -> -y)
-            points[:, 1] *= -1
-            boxes[:, 1] *= -1
-            boxes[:, 6] *= -1
+            if np.random.rand() < 0.5:
+                points[:, 1] *= -1
+                if has_box:
+                    boxes[:, 1] *= -1
+                    boxes[:, 6] *= -1
 
         voxels, coords, num_points = voxelize(
             points, self.voxel_size, self.max_points, self.max_voxels)

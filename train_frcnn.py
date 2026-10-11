@@ -39,6 +39,9 @@ class Nu2DFRCNN(Dataset):
         self.files = sorted(os.listdir(self.img_dir))
         self.augment = augment and split == "train"
         self.to_tensor = torchvision.transforms.ToTensor()
+        # 光学增强: 仅改亮度/对比度/饱和度, 不用颜色反转或灰度化 (保持颜色特征可信)
+        self.jitter = torchvision.transforms.ColorJitter(
+            brightness=0.4, contrast=0.4, saturation=0.4, hue=0.0)
 
     def __len__(self):
         return len(self.files)
@@ -60,11 +63,16 @@ class Nu2DFRCNN(Dataset):
         boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
         labels = torch.as_tensor(labels, dtype=torch.int64)
 
-        if self.augment and len(boxes) and np.random.rand() < 0.5:
-            img = img.transpose(Image.FLIP_LEFT_RIGHT)
-            b = boxes.clone()
-            boxes[:, 0] = W - b[:, 2]
-            boxes[:, 2] = W - b[:, 0]
+        if self.augment and len(boxes):
+            # 水平翻转 (几何增强)
+            if np.random.rand() < 0.5:
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                b = boxes.clone()
+                boxes[:, 0] = W - b[:, 2]
+                boxes[:, 2] = W - b[:, 0]
+            # 光学增强: 亮度/对比度/饱和度抖动 (不改几何, 不破坏框位置)
+            if np.random.rand() < 0.5:
+                img = self.jitter(img)
 
         target = {"boxes": boxes, "labels": labels,
                   "image_id": torch.tensor([i]), "iscrowd": torch.zeros(len(labels), dtype=torch.int64)}
