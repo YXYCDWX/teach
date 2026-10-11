@@ -99,8 +99,7 @@ def keyframe_boxes(tables, sample_token, fr, rng):
     x1, y1, z1, x2, y2, z2 = rng
     boxes = []
     for ann in tables.sample_annotations(sample_token):
-        box = ann_box_in_frame(ann, fr["T_sensor_from_global"],
-                               fr["T_global_from_ego"], fr["T_ego_from_sensor"])
+        box = ann_box_in_frame(ann, fr["T_sensor_from_global"])
         if box is None:
             continue
         center, size, yaw, cls_id = box

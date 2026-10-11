@@ -88,8 +88,7 @@ def load_points_boxes(tables, sd):
     x1, y1, z1, x2, y2, z2 = POINT_RANGE
     boxes = []
     for ann in tables.sample_annotations(sd["sample_token"]):
-        out = ann_box_in_frame(ann, fr["T_sensor_from_global"],
-                               fr["T_global_from_ego"], fr["T_ego_from_sensor"])
+        out = ann_box_in_frame(ann, fr["T_sensor_from_global"])
         if out is None:
             continue
         center, size, yaw, cls_id = out

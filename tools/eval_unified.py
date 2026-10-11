@@ -6,7 +6,6 @@
 import os
 import sys
 import json
-import numpy as np
 from PIL import Image, ImageDraw
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

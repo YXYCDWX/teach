@@ -16,7 +16,7 @@ CAMS = ["CAM_FRONT", "CAM_FRONT_LEFT", "CAM_FRONT_RIGHT",
         "CAM_BACK", "CAM_BACK_LEFT", "CAM_BACK_RIGHT"]
 
 
-def current_lines(tables, scene_name, split_map):
+def current_lines(tables, split_map):
     """按当前代码逻辑重算所有标签 -> {磁盘标签路径: [lines]}"""
     result = {}
     for scene in tables.scenes():
@@ -39,8 +39,7 @@ def current_lines(tables, scene_name, split_map):
                     vis = int(tables.get("visibility", ann["visibility_token"])["level"].split("-")[0][1:])
                     if vis < MIN_VISIBILITY:
                         continue
-                    box = ann_box_in_frame(ann, fr["T_sensor_from_global"],
-                                           fr["T_global_from_ego"], fr["T_ego_from_sensor"])
+                    box = ann_box_in_frame(ann, fr["T_sensor_from_global"])
                     if box is None:
                         continue
                     center, size, yaw, cls_id = box
@@ -68,7 +67,7 @@ def main():
     split_map = {s["token"]: ("train" if i < 8 else "val") for i, s in enumerate(scenes)}
 
     print("[1/3] 全量重算当前逻辑标签 ...")
-    expect = current_lines(tables, None, split_map)
+    expect = current_lines(tables, split_map)
 
     print("[2/3] 与磁盘标签比对 ...")
     n_img_diff = 0

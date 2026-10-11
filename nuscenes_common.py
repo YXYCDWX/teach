@@ -120,20 +120,6 @@ def make_transform(translation, rotation):
     return T
 
 
-def transform_matrix(cs_record, ep_record):
-    """传感器坐标系 -> 全局坐标系 的 4x4 矩阵"""
-    T_sensor_ego = make_transform(cs_record["translation"], cs_record["rotation"])
-    T_ego_global = make_transform(ep_record["translation"], ep_record["rotation"])
-    return T_ego_global @ T_sensor_ego
-
-
-def global_to_sensor(points, T_sensor_from_global):
-    """全局点 (N,3) -> 传感器坐标系"""
-    R = T_sensor_from_global[:3, :3]
-    t = T_sensor_from_global[:3, 3]
-    return points @ R.T + t
-
-
 def box_corners(center, size, yaw):
     """中心 (3,), 尺寸 (w,l,h), 偏航角 yaw (绕 z 轴) -> 8 个角点 (8,3)
     nuScenes 约定: 长 l 沿局部 x 轴 (朝向方向), 宽 w 沿局部 y 轴, h 沿 z 轴
@@ -150,7 +136,7 @@ def box_corners(center, size, yaw):
     return corners @ Rz.T + np.asarray(center)
 
 
-def ann_box_in_frame(ann, T_sensor_from_global, T_global_from_ego, T_ego_from_sensor):
+def ann_box_in_frame(ann, T_sensor_from_global):
     """把 sample_annotation 的 3D 框变换到目标传感器坐标系
     返回 (center(3,), size(w,l,h), yaw, cls_id); 类别不在映射表内返回 None
     """
@@ -172,7 +158,7 @@ def ann_box_in_frame(ann, T_sensor_from_global, T_global_from_ego, T_ego_from_se
 
 
 def frames_for_sample_data(tables, sd_record):
-    """为 sample_data 构造: 全局->该传感器 的 4x4 矩阵 + 相机内参 + 车体系相关矩阵"""
+    """为 sample_data 构造: 全局->该传感器 的 4x4 矩阵 + 相机内参"""
     cs = tables.get("calibrated_sensor", sd_record["calibrated_sensor_token"])
     ep = tables.get("ego_pose", sd_record["ego_pose_token"])
     T_ego_from_sensor = make_transform(cs["translation"], cs["rotation"])
@@ -181,9 +167,5 @@ def frames_for_sample_data(tables, sd_record):
     K = np.asarray(cs["camera_intrinsic"], dtype=np.float64) if cs["camera_intrinsic"] else None
     return {
         "T_sensor_from_global": T_sensor_from_global,
-        "T_ego_from_sensor": T_ego_from_sensor,
-        "T_global_from_ego": T_global_from_ego,
         "K": K,
-        "cs": cs,
-        "ep": ep,
     }
